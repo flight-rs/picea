@@ -1,217 +1,229 @@
-#![feature(box_syntax, box_patterns)]
+#![feature(box_syntax, core_intrinsics)]
 
-use std::marker::PhantomData;
-use std::any::Any;
+pub mod updown {
+    use std::mem::{replace, uninitialized};
+    use std::ptr::write;
+    use std::marker::PhantomData;
+    use std::any::Any;
+    use std::intrinsics::type_name;
 
-struct Item {
-    node: Box<RawNode>,
-    tree: ItemTree,
-}
-
-struct ItemTree {
-    live: bool,
-    children: Vec<Item>,
-}
-
-pub struct World<E, P> {
-    nodes: Vec<Item>,
-    pub events: Vec<E>,
-    _phantom: PhantomData<P>,
-}
-
-impl<E: 'static, P: 'static> World<E, P> {
-    pub fn new() -> World<E, P> {
-        World {
-            nodes: Vec::new(),
-            events: Vec::new(),
-            _phantom: PhantomData,
-        }
+    pub struct TreeBuilder<'a, E, P> {
+        nodes: &'a mut Vec<Item>,
+        _phantom: PhantomData<(E, P)>,
     }
 
-    pub fn push<N>(&mut self, node: N) 
-        where N: Node<Param=P, Generate=E> + RawNode + 'static
-    {
-        self.nodes.push(Item {
-            node: box node,
-            tree: ItemTree {
-                live: true,
+    impl<'a, E, P> TreeBuilder<'a, E, P> {
+        pub fn push<N: Node<E, P> + 'static>(&mut self, node: N) -> TreeBuilder<N::Event, N::Output> {
+            self.nodes.push(Item {
+                node: raw_node(node),
+                update: update::<E, P, N::Event, N::Output>,
                 children: Vec::with_capacity(0),
-            },
-        });
-    }
-
-    pub fn update(&mut self, param: P) {
-        let param = &param as &Any;
-        let mut siblings = Vec::with_capacity(0);
-        let mut new_events = Vec::with_capacity(0);
-        for c in self.nodes.iter_mut().filter(|c| c.tree.live) {
-            let mut ctx = Context {
-                t: &mut c.tree,
-                sib: &mut siblings,
-                gen_events: &mut new_events,
-                my_events: Vec::with_capacity(0),
+                live: true,
+            });
+            TreeBuilder {
+                nodes: &mut self.nodes.last_mut().unwrap().children,
                 _phantom: PhantomData,
-            };
-            unsafe {
-                c.node.update(&mut ctx, param);
-                while !ctx.my_events.is_empty() {
-                    for e in ::std::mem::replace(&mut ctx.my_events, Vec::with_capacity(0)) {
-                        c.node.receive(&mut ctx, &*e);
-                    }
-                }
             }
         }
-        self.nodes.append(&mut siblings);
-        self.events.extend(new_events.into_iter().map(|e| 
-            if let Ok(box e) = e.downcast() { e } else { panic!("N::Generate != E") }
-        ));
-    }
-}
-
-pub struct Context<'a, N> {
-    t: &'a mut ItemTree,
-    sib: &'a mut Vec<Item>,
-    gen_events: &'a mut Vec<Box<Any>>, // TODO: Does not need to box every event
-    my_events: Vec<Box<Any>>,
-    _phantom: PhantomData<N>,
-}
-
-impl<'a, N: Node> Context<'a, N> {
-    /// Mark self as dead, instantly dropping all children.
-    pub fn kill(&mut self) {
-        self.t.live = false;
-        self.t.children.clear();
     }
 
-    /// Add a sibling to self.
-    pub fn sibling<S>(&mut self, sib: S) 
-        where S: Node<Param=N::Param, Generate=N::Generate> + RawNode + 'static
-    {
-        self.sib.push(Item {
-            node: box sib,
-            tree: ItemTree {
-                live: true,
+    pub struct Tree<E, P> {
+        nodes: Vec<Item>,
+        pub events: Vec<E>,
+        _phantom: PhantomData<P>,
+    }
+
+    impl<E, P> Tree<E, P> {
+        pub fn new() -> Tree<E, P> {
+            Tree {
+                nodes: Vec::new(),
+                events: Vec::new(),
+                _phantom: PhantomData,
+            }
+        }
+
+        pub fn build(&mut self) -> TreeBuilder<E, P> {
+            TreeBuilder {
+                nodes: &mut self.nodes,
+                _phantom: PhantomData,
+            }
+        }
+
+        pub fn push<N: Node<E, P> + 'static>(&mut self, node: N) {
+            self.build().push(node);
+        }
+
+        pub fn update(&mut self, param: &P) {
+            let send = &mut self.events as *mut _ as *mut ();
+            let param = param as *const _  as *const ();
+            let mut add = Vec::with_capacity(0);
+
+            for n in &mut self.nodes {
+                let up = n.update;
+                up(n, send, param, &mut add);
+            }
+
+            self.nodes.append(&mut add);
+        }
+    }
+
+    struct Item {
+        node: RawNode,
+        update: fn(&mut Item, *mut (), *const (), &mut Vec<Item>),
+        children: Vec<Item>,
+        live: bool,
+    }
+
+    fn update<S, P, E, O>(item: &mut Item, send: *mut (), param: *const (), sib: &mut Vec<Item>) {
+        let mut ctx = Context {
+            send: unsafe { &mut *(send as *mut Vec<S>) },
+            param: unsafe { &*(param as *const P) },
+            events: Vec::<E>::with_capacity(0),
+            chi: Vec::with_capacity(0),
+            sib: sib,
+            _phantom: PhantomData::<O>,
+        };
+        let mut o = unsafe { uninitialized::<O>() };
+        (item.node.update)(
+            &mut *item.node.data,
+            &mut ctx as *mut _ as *mut (),
+            &mut o as *mut _ as *mut ());
+
+        for mut c in &mut item.children.iter_mut().filter(|c| c.live) {
+            (c.update)(
+                &mut c,
+                &mut ctx.events as *mut _ as *mut (),
+                &mut o as *mut _ as *mut (),
+                &mut ctx.chi);
+        }
+
+        for e in replace(&mut ctx.events, Vec::with_capacity(0)) {
+            (item.node.event)(
+                &mut *item.node.data,
+                &mut ctx as *mut _ as *mut (),
+                &e as *const _  as *const ())
+        }
+
+        item.children.append(&mut ctx.chi);
+    }
+
+    pub struct Context<'a, S: 'a, P: 'a, E: 'a, O: 'a> {
+        send: &'a mut Vec<S>,
+        pub param: &'a P,
+        events: Vec<E>,
+        chi: Vec<Item>,
+        sib: &'a mut Vec<Item>,
+        _phantom: PhantomData<O>,
+    }
+
+    impl<'a, S, P, E, O> Context<'a, S, P, E, O> {
+        pub fn send(&mut self, event: S) {
+            self.send.push(event);
+        }
+
+        pub fn accept(&mut self, event: E) {
+            self.events.push(event);
+        }
+
+        pub fn child<N: Node<O, E> + 'static>(&mut self, node: N) {
+            self.chi.push(Item {
+                node: raw_node(node),
+                update: update::<O, E, N::Event, N::Output>,
                 children: Vec::with_capacity(0),
-            },
-        });
+                live: true,
+            });
+        }
+        
+        pub fn sibling<N: Node<S, P> + 'static>(&mut self, node: N) {
+            self.sib.push(Item {
+                node: raw_node(node),
+                update: update::<S, P, N::Event, N::Output>,
+                children: Vec::with_capacity(0),
+                live: true,
+            });
+        }
     }
+
+    pub trait Node<S, P> {
+        type Output;
+        type Event;
+
+        fn update(&mut self, ctx: &mut Context<S, P, Self::Event, Self::Output>) -> Self::Output;
+        fn event(&mut self, ctx: &mut Context<S, P, Self::Event, Self::Output>, event: &Self::Event);
+    }
+
+    pub struct RawNode {
+        data: Box<Any>,
+        update: fn(&mut Any, *mut (), *mut ()),
+        event: fn(&mut Any, *mut (), *const ()),
+    }
+
+    fn raw_node<N: Node<S, P> + 'static, S, P>(n: N) -> RawNode {
+        fn update<N: Node<S, P> + 'static, S, P>(n: &mut Any, ctx: *mut (), out: *mut ()) {
+            unsafe {
+                write(out as *mut N::Output, Node::update(
+                    n.downcast_mut::<N>().unwrap(),
+                    &mut *(ctx as *mut Context<S, P, N::Event, N::Output>),
+                ));
+            }
+        }
+
+        fn event<N: Node<S, P> + 'static, S, P>(n: &mut Any, ctx: *mut (), event: *const ()) {
+            unsafe {
+                Node::event(
+                    n.downcast_mut::<N>().unwrap(),
+                    &mut *(ctx as *mut Context<S, P, N::Event, N::Output>),
+                    &*(event as *const N::Event),
+                );
+            }
+        }
+
+        RawNode {
+            data: Box::new(n),
+            update: update::<N, S, P>,
+            event:event::<N, S, P>,
+        }
+    }
+}
+
+use updown::*;
+
+struct Echo;
+
+impl<E: Clone> Node<E, E> for Echo {
+    type Event = E;
+    type Output = ();
     
-    /// Replace self, instantly dropping all children.
-    pub fn replace<S>(&mut self, with: S) 
-        where S: Node<Param=N::Param, Generate=N::Generate> + RawNode + 'static
-    {
-        self.kill();
-        self.sibling(with);
+    fn update(&mut self, ctx: &mut Context<E, E, E, ()>) {
+        ctx.send(ctx.param.clone())
     }
 
-    /// Add a child of self.
-    pub fn child<C>(&mut self, child: C)
-        where C: Node<Param=N::Output, Generate=N::Event> + RawNode + 'static
-    {
-        self.t.children.push(Item {
-            node: box child,
-            tree: ItemTree {
-                live: true,
-                children: Vec::with_capacity(0),
-            },
-        });
-    }
-
-    /// Send event to self.
-    pub fn apply(&mut self, event: N::Event) {
-        self.my_events.push(box event);
-    }
-
-    /// Send many events to self.
-    pub fn apply_all<I: Iterator<Item=N::Event>>(&mut self, events: I) {
-        self.my_events.extend(events.map(|e| box e as Box<Any>));
-    }
-
-    /// Send event to parent.
-    pub fn send(&mut self, event: N::Generate) {
-        self.gen_events.push(box event);
-    }
-
-    /// Send many events to parent.
-    pub fn send_all<I: Iterator<Item=N::Generate>>(&mut self, events: I) {
-        self.gen_events.extend(events.map(|e| box e as Box<Any>));
-    }
-
-    /// Sends an update to children.
-    pub fn update(&mut self, param: N::Output) {
-        let param = &param as &Any;
-        let mut siblings = Vec::with_capacity(0);
-        for c in self.t.children.iter_mut().filter(|c| c.tree.live) {
-            let mut ctx = Context {
-                t: &mut c.tree,
-                sib: &mut siblings,
-                gen_events: &mut self.my_events,
-                my_events: Vec::with_capacity(0),
-                _phantom: PhantomData,
-            };
-            unsafe {
-                c.node.update(&mut ctx, param);
-                while !ctx.my_events.is_empty() {
-                    for e in ::std::mem::replace(&mut ctx.my_events, Vec::with_capacity(0)) {
-                        c.node.receive(&mut ctx, &*e);
-                    }
-                }
-            }
-        }
-        self.t.children.append(&mut siblings);
+    fn event(&mut self, ctx: &mut Context<E, E, E, ()>, e: &E) {
+        ctx.send(e.clone())
     }
 }
 
-pub trait Node: Sized {
-    type Event: 'static;
-    type Generate: 'static;
-
-    type Param: 'static;
-    type Output: 'static;
-
-    fn update(&mut self, ctx: &mut Context<Self>, par: &Self::Param);
-    fn receive(&mut self, ctx: &mut Context<Self>, ev: &Self::Event);
-}
-
-pub trait RawNode {
-    unsafe fn update(&mut self, ctx: *mut Context<()>, par: &Any);
-    unsafe fn receive(&mut self, ctx: *mut Context<()>, ev: &Any);
-}
-
-impl<N: Node> RawNode for N {
-    unsafe fn update(&mut self, ctx: *mut Context<()>, par: &Any) {
-        Node::update(self, &mut *(ctx as *mut Context<N>),
-            par.downcast_ref().expect("N::Output != C::Param")
-        );
-    }
-
-    unsafe fn receive(&mut self, ctx: *mut Context<()>, ev: &Any) {
-        Node::receive(self, &mut *(ctx as *mut Context<N>),
-            ev.downcast_ref().expect("N::Event != C::Generate")
-        );
-    }
-}
-
-struct Appender {
+struct Append {
     append: String,
 }
 
-impl<E> Node for Appender {
-    type Generate = E;
+impl<E: Clone> Node<E, String> for Append {
     type Event = E;
-    type Param = String;
     type Output = String;
 
-    fn update(&mut self, ctx: &mut Context<Appender>, par: String) {
-        ctx.update(par + &self.append);
+    fn update(&mut self, ctx: &mut Context<E, String, E, String>) -> String {
+        (*ctx.param).to_owned() + &self.append
     }
 
-    fn receive(&mut self, ctx: &mut Context<Appender>, event: E) {
-        ctx.send(event);
+    fn event(&mut self, ctx: &mut Context<E, String, E, String>, e: &E) {
+        ctx.send(e.clone());
     }
 }
 
 fn main() {
-    let mut world: World<String, String> = World::new();
-    world.push()
+    let mut tree: Tree<String, String> = Tree::new();
+    tree.build()
+        .push(Append { append: "World".to_owned() })
+        .push(Echo);
+    tree.update(&"Hello ".to_owned());
 }
