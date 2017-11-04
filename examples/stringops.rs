@@ -1,5 +1,6 @@
+#[macro_use]
 extern crate picea;
-use picea::*;
+use picea::Tree;
 
 use std::collections::VecDeque;
 
@@ -11,28 +12,23 @@ struct Timer {
     event: TextEvent,
 }
 
-impl Node<TextEvent, Tick> for VecDeque<Timer> {
-    type Output = ();
-    type Event = ();
+node_impl!{
+    impl Node<TextEvent, Tick> for VecDeque<Timer> {
+        type Event = ();
+        type Output = ();
 
-    fn update(
-        &mut self,
-        ctx: &mut Context<TextEvent, Tick, Self>,
-    ) {
-        if let Some(last) = self.front_mut() {
-            if last.t > 0 {
-                last.t -= 1;
-                return;
-            }
+        match ctx {
+            update () => {
+                if let Some(last) = self.front_mut() {
+                    if last.t > 0 {
+                        last.t -= 1;
+                        return;
+                    }
+                }
+                if let Some(t) = self.pop_front() { ctx.send(t.event); }
+            },
         }
-        if let Some(t) = self.pop_front() { ctx.send(t.event); }
     }
-
-    fn event(
-        &mut self,
-        _: &mut Context<TextEvent, Tick, Self>,
-        _: (),
-    ) { }
 }
 
 #[derive(Clone)]
@@ -60,34 +56,25 @@ impl Text {
     }
 }
 
-impl Node<(f32, String), Tick> for Text {
-    type Output = Tick;
-    type Event = TextEvent;
+node_impl!{
+    impl Node<(f32, String), Tick> for Text {
+        type Event = TextEvent;
+        type Output = Tick;
 
-    fn update(
-        &mut self,
-        ctx: &mut Context<(f32, String), Tick, Self>,
-    ) -> Tick {
-        ctx.send((self.pos, self.val.clone()));
-        *ctx.param()
-    }
-
-    fn event(
-        &mut self,
-        ctx: &mut Context<(f32, String), Tick, Self>,
-        event: TextEvent,
-    ) {
-        use self::TextEvent::*;
-        match event {
-            Move(v) => self.pos += v,
-            Delete => ctx.kill(),
-            Duplicate(pos, timers) => {
+        match ctx {
+            update param => {
+                ctx.send((self.pos, self.val.clone()));
+                param
+            },
+            event Move(v) => self.pos += v,
+            event Delete => ctx.kill(),
+            event Duplicate(pos, timers) => {
                 ctx.siblings().push(Text {
                     pos: pos,
                     val: self.val.clone(),
                 }).push(timers);
             },
-            Append(ref s) => self.val += s,
+            event Append(ref s) => self.val += s,
         }
     }
 }

@@ -2,20 +2,6 @@ use std::mem::{replace};
 use std::marker::PhantomData;
 use std::any::Any;
 
-pub struct Passthrough;
-impl<E, P: Clone> Node<E, P> for Passthrough {
-    type Event = E;
-    type Output = P;
-
-    fn update(&mut self, ctx: &mut Context<E, P, Self>) -> P {
-        return ctx.param.clone()
-    }
-
-    fn event(&mut self, ctx: &mut Context<E, P, Self>, event: E) {
-        ctx.send(event)
-    }
-}
-
 pub struct TreeBuilder<'a, E, P> {
     nodes: &'a mut Vec<Item>,
     _phantom: PhantomData<(E, P)>,
@@ -196,4 +182,71 @@ pub trait Node<S, P> {
     fn update(&mut self, ctx: &mut Context<S, P, Self>) -> Self::Output;
     fn event(&mut self, ctx: &mut Context<S, P, Self>, event: Self::Event);
     fn post(&mut self, _ctx: &mut Context<S, P, Self>) {}
+}
+
+#[macro_export]
+macro_rules! node_funcs {
+    ($S:ty, $P:ty, $ctx:ident, $(
+        $(update $update_pat:pat => $update_expr:expr,)*
+        $(post $post_pat:pat => $post_expr:expr,)*
+        $(event $event_pat:pat => $event_expr:expr),*,
+    )*$(,)*) => {
+        #[allow(unused)]
+        fn update(&mut self, $ctx: &mut $crate::Context<$S, $P, Self>) -> Self::Output {
+            match *$ctx.param {
+                $($($update_pat => $update_expr,)*)*
+            }
+        }
+
+        #[allow(unused)]
+        fn event(&mut self, $ctx: &mut $crate::Context<$S, $P, Self>, event: Self::Event) {
+            match event {
+                $($($event_pat => { $event_expr; },)*)*
+                _ => (),
+            }
+        }
+
+        #[allow(unused)]
+        fn post(&mut self, $ctx: &mut $crate::Context<$S, $P, Self>) {
+            match *$ctx.param {
+                $($($post_pat => { $post_expr; },)*)*
+                _ => (),
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! node_impl {
+    {
+        impl$(<$($($gen:tt):*),+>)* Node<$S:ty, $P:ty> for $ty:path $(where $($wh:tt),*)*{
+            type Event = $event:ty;
+            type Output = $output:ty;
+            
+            match $ctx:ident {
+                $($m:ident $p:pat => $e:expr),*
+                $(,)*
+            }
+        }
+    } => {
+        impl$(<$($($gen):*),+>)* $crate::Node<$S, $P> for $ty $(where $($wh),*)* {
+            type Event = $event;
+            type Output = $output;
+
+            node_funcs!($S, $P, $ctx, $($m $p => $e,)*);
+        }
+    }
+}
+
+pub struct Passthrough;
+node_impl! {
+    impl<E, P: Clone> Node<E, P> for Passthrough {
+        type Event = E;
+        type Output = P;
+
+        match ctx {
+            update ref param => param.clone(),
+            event e => ctx.send(e),
+        }
+    }
 }
