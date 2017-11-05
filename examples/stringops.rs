@@ -125,33 +125,40 @@ macro_rules! deque {
 fn main() {
     use self::TextEvent::*;
 
-    let mut tree = Tree::new();
-    { let mut root = tree.build();
-        { let mut cat = root.push(SortedCat::new());
-            cat.push(Text::new(0., "Hello")).push(deque![
-                Move(2.).timer(0),
-                Delete.timer(7),
-            ]);
-            cat.push(Text::new(1., "World")).push(deque![
-                Move(2.).timer(1),
-                Duplicate(-1., deque![
-                    Append("est".to_owned()).timer(0),
-                    Move(100.).timer(0),
-                    Delete.timer(0),
-                ]).timer(0),
-            ]);
-        }
-        { let mut cat = root.push(SortedCat::new());
-            cat.push(Text::new(0., "Foo")).push(deque![
-                Move(2.).timer(0),
-                Append("oo".to_owned()).timer(1),
-            ]);
-            cat.push(Text::new(1., "Bar")).push(deque![
-                Move(2.).timer(1),
-                Delete.timer(2),
-            ]);
-        }
-    }
+    let mut tree: Tree<String, Tick> = tree!{
+        SortedCat::new() => {
+            Text::new(0., "Hello") => {
+                deque![
+                    Move(2.).timer(0),
+                    Delete.timer(7),
+                ],
+            },
+            Text::new(1., "World") => {
+                deque![
+                    Move(2.).timer(1),
+                    Duplicate(-1., deque![
+                        Append("est".to_owned()).timer(0),
+                        Move(100.).timer(0),
+                        Delete.timer(0),
+                    ]).timer(0),
+                ],
+            },
+        },
+        SortedCat::new() => {
+            Text::new(0., "Foo") => {
+                deque![
+                    Move(2.).timer(0),
+                    Append("oo".to_owned()).timer(1),
+                ],
+            },
+            Text::new(1., "Bar") => {
+                deque![
+                    Move(2.).timer(1),
+                    Delete.timer(2),
+                ],
+            },
+        },
+    };
     
     for _ in 0 .. 10 {
         println!("=============");

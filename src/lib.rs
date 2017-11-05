@@ -213,6 +213,22 @@ macro_rules! node_funcs {
                 _ => (),
             }
         }
+    }
+}
+
+macro_rules! nodes {
+    ($b:expr, ) => {};
+    ($b:expr, { $($n:expr $(=> $c:tt)*),*$(,)* }) => {
+        #[allow(unused_mut, unused)]
+        let mut build = $b;
+        $({
+            #[allow(unused_mut, unused)]
+            let mut build = build.push($n);
+            nodes!(build, $($c)=>*);
+        })*
+    };
+    ($b:expr, $($n:expr $(=> $c:tt)*),*$(,)*) => {
+        nodes!($b, { $($n $(=> $c)*),* })
     };
 }
 
@@ -249,4 +265,12 @@ node_impl! {
             event e => ctx.send(e),
         }
     }
+}
+
+macro_rules! tree {
+    { $($n:expr $(=> $c:tt)*),*$(,)* } => {{
+        let mut tree = $crate::Tree::new();
+        { nodes!(tree.build(), { $($n $(=> $c)*),* }); }
+        tree
+    }}
 }
