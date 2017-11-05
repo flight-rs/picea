@@ -125,7 +125,16 @@ macro_rules! deque {
 fn main() {
     use self::TextEvent::*;
 
-    let mut tree: Tree<String, Tick> = tree!{
+    let mut tree: Tree<String, Tick> = Tree::new();
+    extend_tree!(tree.build(), node SortedCat::new());
+    extend_tree!(tree.build(), node SortedCat::new() => []);
+    extend_tree!(tree.build(), node SortedCat::new() => node Text::new(0., "Hello"));
+    extend_tree!(tree.build(), node SortedCat::new() => [
+        node Text::new(0., "Hello") => [],
+        node Text::new(1., "World") => [],
+    ]);
+    
+    /* = tree!{
         SortedCat::new() => {
             Text::new(0., "Hello") => {
                 deque![
@@ -158,7 +167,7 @@ fn main() {
                 ],
             },
         },
-    };
+    }; */
     
     for _ in 0 .. 10 {
         println!("=============");

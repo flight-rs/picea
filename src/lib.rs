@@ -216,6 +216,13 @@ macro_rules! node_funcs {
     }
 }
 
+macro_rules! extend_tree {
+    ($build:expr, $($(node $front:expr)=>* $(=> [($back:tt)*])*),* $(,)*) => (
+        //$( extend_tree!($build$(.push($front))*, $($back)*); )+
+    );
+}
+
+#[macro_export]
 macro_rules! nodes {
     ($b:expr, ) => {};
     ($b:expr, { $($n:expr $(=> $c:tt)*),*$(,)* }) => {
