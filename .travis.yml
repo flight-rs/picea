@@ -9,8 +9,8 @@ cache:
   - "$HOME/deps"
 branches:
   only:
-    - testing
-    - master
+  - testing
+  - master
 script:
 - bash scripts/travis-script.sh
 after_success: |-
@@ -20,4 +20,4 @@ after_success: |-
   bash scripts/upload-doc.sh
 env:
   global:
-    secure: AibVJc5P2ucUeONGW572feS4+wv758Y5cqZp30lNbgEnVTzaiD1jGWofGfpTJivESfNoD+mKC8eIe9LMrxtgaF1fRw+icnIktlzFqtbu4RCz2eX7H4IV4zi8auo9T5iu/xRCQLB5uFj0zSPdvjsVcXP0tm2ehyhxlUWAJrK6QlPUUReAbI99yTt0hYLsgG1Mbl+0lZpJHgnzinI1NSPZpP1LWEeO6EZYxYBCTMzULSDj7MrBe7ys+FfQ0+2t97n7nhdV9wuuE89S/KW278SrK4iaEZwJnDCI68yxIgNwlDLazyXvTS2+s6o2E3evorcIAJTt3PVbQCmpu5NWQeho+sTeO+UH6eH5DhPW9Thcj15FqEvO0v5weX/FQzndPftqIKGppbOFnaAVdPprl5myF4D3yjxkBMRqZbRgEzexeKzPK2h/TDmmM/mv+jOYx/dWiMq5euRpiAsS09YnP0uKwO15YbXj9O8AV6A/ZAPYWCylo1yUC6OZq6Aem5jZ3W/4OKPIGXLmVVxUdsScrYZ4TfP3NRVwl2JrFrE7B/j0CSUATYZIA6oHGwRw3qSm6/tP4YzO3iCU2zvsoEATZffAgMF8b9t7QbUwX75cyoOkFXsdOCZRAM/BZ4GWLPLqNqedO1boV2S2I4IMmkDGNJzOS5VlqwtzsyVrjoaSjxnr/IQ=
+  - secure: RYMV1cbq4h0JsPvTV/fxiufQeTDvta/rFfg7nd6B/GCrYj9dVcWEFcFtaPbH8rKtpS/1sS5CxXm3GmJhoa/l0Wf6aKCvXD8C4VR5McKQR57o3ecp3/Se+iFEdI7K8AiE+uLMHFxPmGcdtiiSexOiQSdS1lt7K3Ow2HI4Ky+GheKreuxub8rCvlePrRjH8S0R4/cXM/NvwVt2dwXwsKbh+XPxJovPhjRmWxMQTftE7JGN3akpMwodEvShJm4+IlnYXGJ23Bun1rZRPYy91Ml2p13zeZMQZ/MNBSMUSdq4L65zzUX7mH+NQlkcJKFCWFOfnsWDGmo0eKtDYv+MLZF4DFI9YOkZ0YQFSfUthZjW321Y+w1uihtzY22YPjsVP2a1vu+Ydk9jkRKRRR/s6jxAo9SEGwxhGi12K+0ZS8Scf/RtKqOlmDBL2gCfu+lSU+KiVWY7mrBEcR8FnKzEeGxJBjFovOOH6Oluui/9AGbhtF3d1vSWLk6vx5H8+g6dNcRi+eCJmtHWHx14bLebmeMbAZpYVojO+/NQYaJAfF0koMSDjtzN/4V1EAKZMG4E8zcdqEV5Arq1mUP3agCgOdU/+UE1k+tLvghUqD4IWtwpjW32a1g7kBKY4nzp6jW7AGp0WBT2AAamP99p0l1H5nAhS9H0VrAfzNfOWsLd4TFNHaU=

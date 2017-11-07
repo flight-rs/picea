@@ -14,5 +14,5 @@ impl<E, P: Clone> Node<E, P> for Passthrough {
         ctx.send(event)
     }
 
-    fn post(&mut self, ctx: &mut Context<E, P, Self>) { }
+    fn post(&mut self, _ctx: &mut Context<E, P, Self>) { }
 }
