@@ -33,6 +33,11 @@ impl Node<TextEvent, Tick> for VecDeque<Timer> {
         _: &mut Context<TextEvent, Tick, Self>,
         _: (),
     ) { }
+
+    fn post(
+        &mut self,
+        _: &mut Context<TextEvent, Tick, Self>,
+    ) { }
 }
 
 #[derive(Clone)]
@@ -90,6 +95,11 @@ impl Node<(f32, String), Tick> for Text {
             Append(ref s) => self.val += s,
         }
     }
+
+    fn post(
+        &mut self,
+        _: &mut Context<(f32, String), Tick, Self>,
+    ) { }
 }
 
 struct SortedCat {
