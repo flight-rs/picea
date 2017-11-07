@@ -2,19 +2,7 @@ use std::mem::{replace};
 use std::marker::PhantomData;
 use std::any::Any;
 
-pub struct Passthrough;
-impl<E, P: Clone> Node<E, P> for Passthrough {
-    type Event = E;
-    type Output = P;
-
-    fn update(&mut self, ctx: &mut Context<E, P, Self>) -> P {
-        return ctx.param.clone()
-    }
-
-    fn event(&mut self, ctx: &mut Context<E, P, Self>, event: E) {
-        ctx.send(event)
-    }
-}
+pub mod builtins;
 
 pub struct TreeBuilder<'a, E, P> {
     nodes: &'a mut Vec<Item>,
@@ -127,6 +115,7 @@ fn apply<S, P, N: Node<S, P> + 'static>(item: &mut Item, send: *mut (), param: *
     }
 }
 
+/// Provides an interface to the tree structure.
 pub struct Context<'a, S: 'a, P: 'a, N: 'a + Node<S, P> + ?Sized> {
     send: &'a mut Vec<S>,
     param: &'a P,
@@ -137,26 +126,31 @@ pub struct Context<'a, S: 'a, P: 'a, N: 'a + Node<S, P> + ?Sized> {
 }
 
 impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
+    /// Send an event to the parent of this node.
     #[inline]
     pub fn send(&mut self, event: S) {
         self.send.push(event);
     }
 
+    /// Send several events to the parent of this node.
     #[inline]
     pub fn send_all<I: Iterator<Item=S>>(&mut self, events: I) {
         self.send.extend(events);
     }
 
+    /// Send an event to self.
     #[inline]
     pub fn accept(&mut self, event: N::Event) {
         self.events.push(event);
     }
 
+    /// Send several events to self.
     #[inline]
     pub fn accept_all<I: Iterator<Item=N::Event>>(&mut self, events: I) {
         self.events.extend(events);
     }
 
+    /// Build child nodes.
     #[inline]
     pub fn children(&mut self) -> TreeBuilder<N::Event, N::Output> {
         TreeBuilder {
@@ -165,6 +159,7 @@ impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
         }
     }
     
+    /// Build sibling nodes.
     #[inline]
     pub fn siblings(&mut self) -> TreeBuilder<S, P> {
         TreeBuilder {
@@ -173,27 +168,40 @@ impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
         }
     }
 
+    /// Destroy this node once the current update cycle ends. All events and the
+    /// post call for the current cycle are still made.
     #[inline]
     pub fn kill(&mut self) {
         self.live = false;
     }
 
+    /// Cancels the destruction of this node.
     #[inline]
     pub fn revive(&mut self) {
         self.live = true;
     }
 
+    /// Get an immutable reference to the input parameter specified by the parent.
     #[inline]
     pub fn param(&self) -> &P {
         self.param
     }
 }
 
+/// A structure that can be used as a node in a tree.
 pub trait Node<S, P> {
+    /// The parameter type that this node generates.
     type Output;
+    /// The event type that this node accepts.
     type Event;
 
+    /// The update cycle for a node starts with this function being called. The
+    /// cycles for all children will be completed immediately after this function
+    /// exits.
     fn update(&mut self, ctx: &mut Context<S, P, Self>) -> Self::Output;
+    /// This function might be called several times after `update` and before
+    /// `post`.
     fn event(&mut self, ctx: &mut Context<S, P, Self>, event: Self::Event);
-    fn post(&mut self, _ctx: &mut Context<S, P, Self>) {}
+    /// The update cycle for a node ends with this function being called.
+    fn post(&mut self, ctx: &mut Context<S, P, Self>);
 }
