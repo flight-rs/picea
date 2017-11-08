@@ -14,7 +14,7 @@ impl<E, P: Clone> Node<E, P> for Passthrough {
         ctx.send(event)
     }
 
-    fn post(&mut self, _ctx: &mut Context<E, P, Self>) { }
+    fn end(&mut self, _ctx: &mut Context<E, P, Self>) { }
 }
 
 /// Bounces input params back as events.
@@ -29,5 +29,5 @@ impl<A: Clone> Node<A, A> for Bounce {
 
     fn event(&mut self, _ctx: &mut Context<A, A, Self>, _event: ()) { }
 
-    fn post(&mut self, _ctx: &mut Context<A, A, Self>) { }
+    fn end(&mut self, _ctx: &mut Context<A, A, Self>) { }
 }

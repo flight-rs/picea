@@ -56,7 +56,7 @@ fn chain_call_order() {
             assert_eq!(self.below, done);
         }
 
-        fn post(&mut self, ctx: &mut Context<(), Rc<Cell<(u32, u32)>>, Self>) {
+        fn end(&mut self, ctx: &mut Context<(), Rc<Cell<(u32, u32)>>, Self>) {
             if self.below == 0 {
                 // No children, only `update` has been called
                 assert_eq!(self.state, State::WORKING);
@@ -109,7 +109,7 @@ fn chain_data_sequence() {
             ctx.send(n + 1)
         }
 
-        fn post(&mut self, ctx: &mut Context<u32, u32, Self>) {
+        fn end(&mut self, ctx: &mut Context<u32, u32, Self>) {
             assert_eq!(*ctx.param(), self.above);
         }
     }
@@ -142,7 +142,7 @@ fn add_sibling() {
 
         fn event(&mut self, _ctx: &mut Context<u32, (), Self>, _n: u32) { }
 
-        fn post(&mut self, ctx: &mut Context<u32, (), Self>) {
+        fn end(&mut self, ctx: &mut Context<u32, (), Self>) {
             ctx.send(self.val);
         }
     }

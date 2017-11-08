@@ -12,10 +12,9 @@ pub struct TreeBuilder<'a, E, P> {
 impl<'a, E, P> TreeBuilder<'a, E, P> {
     pub fn push_boxed<N: Node<E, P> + 'static>(&mut self, node: Box<N>) -> TreeBuilder<N::Event, N::Output> {
         self.nodes.push(Item {
-            node: node as Box<Any>,
+            node: Some(node as Box<Any>),
             apply: apply::<E, P, N>,
             children: Vec::with_capacity(0),
-            live: true,
         });
         TreeBuilder {
             nodes: &mut self.nodes.last_mut().unwrap().children,
@@ -63,7 +62,7 @@ impl<E, P> Tree<E, P> {
         let param = param as *const _  as *const ();
         let mut add = Vec::with_capacity(0);
 
-        for n in self.nodes.iter_mut().filter(|n| n.live) {
+        for n in &mut self.nodes {
             (n.apply)(n, send, param, &mut add);
         }
 
@@ -72,46 +71,52 @@ impl<E, P> Tree<E, P> {
 }
 
 struct Item {
-    node: Box<Any>,
+    node: Option<Box<Any>>,
     apply: fn(&mut Item, *mut (), *const (), &mut Vec<Item>),
     children: Vec<Item>,
-    live: bool,
 }
 
 fn apply<S, P, N: Node<S, P> + 'static>(item: &mut Item, send: *mut (), param: *const (), sib: &mut Vec<Item>) {
-    let mut ctx = Context {
-        send: unsafe { &mut *(send as *mut Vec<S>) },
-        param: unsafe { &*(param as *const P) },
-        events: Vec::with_capacity(0),
-        chi: Vec::with_capacity(0),
-        sib: sib,
-        live: item.live,
-    };
+    let live = if let Some(ref mut node) = item.node {
+        let mut ctx = Context {
+            send: unsafe { &mut *(send as *mut Vec<S>) },
+            param: unsafe { &*(param as *const P) },
+            events: Vec::with_capacity(0),
+            chi: Vec::with_capacity(0),
+            sib: sib,
+            live: true,
+        };
 
-    let node = (&mut *item.node).downcast_mut::<N>().expect("Node type mismatch");
-    let mut o = node.update(&mut ctx);
+        let node = node.downcast_mut::<N>().expect("Node type mismatch");
+        let mut o = node.update(&mut ctx);
 
-    for mut c in &mut item.children.iter_mut().filter(|c| c.live) {
-        (c.apply)(
-            &mut c,
-            &mut ctx.events as *mut _ as *mut (),
-            &mut o as *const _ as *const (),
-            &mut ctx.chi);
-    }
-
-    while !ctx.events.is_empty() {
-        for e in replace(&mut ctx.events, Vec::with_capacity(0)) {
-            node.event(&mut ctx, e);
+        for mut c in &mut item.children {
+            (c.apply)(
+                &mut c,
+                &mut ctx.events as *mut _ as *mut (),
+                &mut o as *const _ as *const (),
+                &mut ctx.chi);
         }
-    }
 
-    node.post(&mut ctx);
+        while !ctx.events.is_empty() {
+            for e in replace(&mut ctx.events, Vec::with_capacity(0)) {
+                node.event(&mut ctx, e);
+            }
+        }
 
-    if ctx.live {
+        node.end(&mut ctx);
         item.children.append(&mut ctx.chi);
-    } else {
-        item.live = false;
-        item.children.clear();
+        ctx.live
+    } else { false };
+
+    if !live {
+        let node = *item.node.take().unwrap().downcast::<N>().expect("Node type mismatch");
+        let sub: Tree<S, P> = Tree {
+            nodes: replace(&mut item.children, Vec::with_capacity(0)),
+            events: Vec::with_capacity(0),
+            _phantom: PhantomData,
+        };
+        node.close(sub);
     }
 }
 
@@ -169,7 +174,7 @@ impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
     }
 
     /// Destroy this node once the current update cycle ends. All events and the
-    /// post call for the current cycle are still made.
+    /// end call for the current cycle are still made.
     #[inline]
     pub fn kill(&mut self) {
         self.live = false;
@@ -189,7 +194,7 @@ impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
 }
 
 /// A structure that can be used as a node in a tree.
-pub trait Node<S, P> {
+pub trait Node<S, P>: Sized {
     /// The parameter type that this node generates.
     type Output;
     /// The event type that this node accepts.
@@ -200,8 +205,11 @@ pub trait Node<S, P> {
     /// exits.
     fn update(&mut self, ctx: &mut Context<S, P, Self>) -> Self::Output;
     /// This function might be called several times after `update` and before
-    /// `post`.
+    /// `end`.
     fn event(&mut self, ctx: &mut Context<S, P, Self>, event: Self::Event);
     /// The update cycle for a node ends with this function being called.
-    fn post(&mut self, ctx: &mut Context<S, P, Self>);
+    fn end(&mut self, ctx: &mut Context<S, P, Self>);
+    /// If this node has been killed, `close` is called with this node's
+    /// subtree following `end`. 
+    fn close(self, _tree: Tree<S, P>) { }
 }

@@ -34,7 +34,7 @@ impl Node<TextEvent, Tick> for VecDeque<Timer> {
         _: (),
     ) { }
 
-    fn post(
+    fn end(
         &mut self,
         _: &mut Context<TextEvent, Tick, Self>,
     ) { }
@@ -96,7 +96,7 @@ impl Node<(f32, String), Tick> for Text {
         }
     }
 
-    fn post(
+    fn end(
         &mut self,
         _: &mut Context<(f32, String), Tick, Self>,
     ) { }
@@ -129,7 +129,7 @@ impl Node<String, Tick> for SortedCat {
         self.text.push(event);
     }
 
-    fn post(
+    fn end(
         &mut self,
         ctx: &mut Context<String, Tick, Self>,
     ) {
