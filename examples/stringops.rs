@@ -148,7 +148,7 @@ macro_rules! deque {
 fn main() {
     use self::TextEvent::*;
 
-    let mut tree = Tree::new();
+    let mut tree: Tree<String, Tick> = Tree::new();
     { let mut root = tree.build();
         { let mut cat = root.push(SortedCat::new());
             cat.push(Text::new(0., "Hello")).push(deque![
