@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["builtins",""]],"struct":[["Context","Provides an interface to the tree structure."],["Tree",""],["TreeBuilder",""]],"trait":[["Node","A structure that can be used as a node in a tree."]]});
