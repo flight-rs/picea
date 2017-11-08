@@ -150,9 +150,80 @@ fn add_sibling() {
     // Build a simple chain
     let mut t: Tree<u32, ()> = Tree::new();
     t.build().push(N { val: 0 });
+    let mut data = vec![0];
+
+    for _ in 0..8 {
+        t.update(&());
+        t.events.sort();
+        data.sort();
+        assert_eq!(t.events, data);
+        t.events.clear();
+
+        let extend = data.clone().into_iter().map(|v| v + 1);
+        data.extend(extend);
+    }
+}
+
+#[test]
+fn add_child() {
+    struct N { fresh: bool };
+
+    impl Node<u32, ()> for N {
+        type Output = ();
+        type Event = u32;
+
+        fn update(&mut self, ctx: &mut Context<u32, (), Self>) {
+            if self.fresh { ctx.children().push(N { fresh: true }); }
+        }
+
+        fn event(&mut self, ctx: &mut Context<u32, (), Self>, n: u32) { 
+            ctx.send(n + 1);
+        }
+
+        fn end(&mut self, ctx: &mut Context<u32, (), Self>) {
+            if self.fresh { ctx.send(0); }
+            self.fresh = false;
+        }
+    }
+
+    // Build a simple chain
+    let mut t: Tree<u32, ()> = Tree::new();
+    t.build().push(N { fresh: true });
+
+    for i in 0..10 {
+        t.update(&());
+        assert_eq!(t.events, vec![i]);
+        t.events.clear();
+    }
+}
+
+#[test]
+fn close_node() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct N(Rc<Cell<u32>>);
+
+    impl Node<(), ()> for N {
+        type Output = ();
+        type Event = ();
+
+        fn update(&mut self, ctx: &mut Context<(), (), Self>) {
+            self.0.set(self.0.get() | 0b001);
+            ctx.close(|n, _| n.0.set(n.0.get() | 0b100));
+        }
+
+        fn event(&mut self, _ctx: &mut Context<(), (), Self>, _: ()) {}
+
+        fn end(&mut self, _ctx: &mut Context<(), (), Self>) {
+            self.0.set(self.0.get() | 0b010);
+        }
+    }
+
+    // Build a simple chain
+    let mut t: Tree<(), ()> = Tree::new();
+    let bits = Rc::new(Cell::new(0b000));
+    t.build().push(N(bits.clone()));
     t.update(&());
-    assert_eq!(t.events, vec![0]);
-    t.events.clear();
-    t.update(&());
-    assert_eq!(t.events, vec![0, 1]);
+    assert_eq!(bits.get(), 0b111);
 }

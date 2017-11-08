@@ -1,6 +1,10 @@
+#![feature(fnbox)]
+/// TODO: no nightly
+
 use std::mem::{replace};
 use std::marker::PhantomData;
 use std::any::Any;
+use std::boxed::FnBox;
 
 pub mod builtins;
 
@@ -31,6 +35,8 @@ impl<'a, E, P> TreeBuilder<'a, E, P> {
     }
 }
 
+// A dynamic, event-oriented tree.
+#[derive(Default)]
 pub struct Tree<E, P> {
     nodes: Vec<Item>,
     pub events: Vec<E>,
@@ -38,6 +44,7 @@ pub struct Tree<E, P> {
 }
 
 impl<E, P> Tree<E, P> {
+    // Create a new empty tree.
     pub fn new() -> Tree<E, P> {
         Tree {
             nodes: Vec::new(),
@@ -77,14 +84,14 @@ struct Item {
 }
 
 fn apply<S, P, N: Node<S, P> + 'static>(item: &mut Item, send: *mut (), param: *const (), sib: &mut Vec<Item>) {
-    let live = if let Some(ref mut node) = item.node {
+    let close = if let Some(ref mut node) = item.node {
         let mut ctx = Context {
             send: unsafe { &mut *(send as *mut Vec<S>) },
             param: unsafe { &*(param as *const P) },
             events: Vec::with_capacity(0),
             chi: Vec::with_capacity(0),
             sib: sib,
-            live: true,
+            close: None,
         };
 
         let node = node.downcast_mut::<N>().expect("Node type mismatch");
@@ -106,17 +113,17 @@ fn apply<S, P, N: Node<S, P> + 'static>(item: &mut Item, send: *mut (), param: *
 
         node.end(&mut ctx);
         item.children.append(&mut ctx.chi);
-        ctx.live
-    } else { false };
+        ctx.close
+    } else { None };
 
-    if !live {
-        let node = *item.node.take().unwrap().downcast::<N>().expect("Node type mismatch");
-        let sub: Tree<S, P> = Tree {
+    if let Some(close) = close {
+        let node = item.node.take().unwrap().downcast::<N>().expect("Node type mismatch");
+        let sub: Tree<N::Event, N::Output> = Tree {
             nodes: replace(&mut item.children, Vec::with_capacity(0)),
             events: Vec::with_capacity(0),
             _phantom: PhantomData,
         };
-        node.close(sub);
+        close(node, sub);
     }
 }
 
@@ -127,7 +134,7 @@ pub struct Context<'a, S: 'a, P: 'a, N: 'a + Node<S, P> + ?Sized> {
     events: Vec<N::Event>,
     chi: Vec<Item>,
     sib: &'a mut Vec<Item>,
-    live: bool,
+    close: Option<Box<FnBox(Box<N>, Tree<N::Event, N::Output>)>>,
 }
 
 impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
@@ -177,13 +184,29 @@ impl<'a, S, P, N: Node<S, P>> Context<'a, S, P, N> {
     /// end call for the current cycle are still made.
     #[inline]
     pub fn kill(&mut self) {
-        self.live = false;
+        self.close(|_, _| {});
+    }
+
+    /// Move this node once the current update cycle ends. All events and the
+    /// end call for the current cycle are still made.
+    #[inline]
+    pub fn close<F>(&mut self, close: F) 
+        where F: FnOnce(Box<N>, Tree<N::Event, N::Output>) + 'static
+    {
+        self.close_boxed(Box::new(close));
+    }
+
+    /// Move this node once the current update cycle ends. All events and the
+    /// end call for the current cycle are still made.
+    #[inline]
+    pub fn close_boxed(&mut self, close: Box<FnBox(Box<N>, Tree<N::Event, N::Output>)>) {
+        self.close = Some(close);
     }
 
     /// Cancels the destruction of this node.
     #[inline]
     pub fn revive(&mut self) {
-        self.live = true;
+        self.close = None;
     }
 
     /// Get an immutable reference to the input parameter specified by the parent.
@@ -209,7 +232,4 @@ pub trait Node<S, P>: Sized {
     fn event(&mut self, ctx: &mut Context<S, P, Self>, event: Self::Event);
     /// The update cycle for a node ends with this function being called.
     fn end(&mut self, ctx: &mut Context<S, P, Self>);
-    /// If this node has been killed, `close` is called with this node's
-    /// subtree following `end`. 
-    fn close(self, _tree: Tree<S, P>) { }
 }
